@@ -15,6 +15,14 @@
 #include <string.h>
 #include "common/pgm.h"
 
+#define CUDA_CHECK_RETURN(value) {           \
+    cudaError_t _m_cudaStat = value;         \
+    if (_m_cudaStat != cudaSuccess) {        \
+         fprintf(stderr, "Error %s at line %d in file %s\n",              \
+                 cudaGetErrorString(_m_cudaStat), __LINE__, __FILE__);    \
+         exit(1);                                                         \
+       } }
+
 const int degreeInc = 2;
 const int degreeBins = 180 / degreeInc;
 const int rBins = 100;
@@ -155,23 +163,50 @@ int main (int argc, char **argv)
   cudaMemcpy (d_in, h_in, sizeof (unsigned char) * w * h, cudaMemcpyHostToDevice);
   cudaMemset (d_hough, 0, sizeof (int) * degreeBins * rBins);
 
+
+	cudaEvent_t start, stop;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+
   // execution configuration uses a 1-D grid of 1-D blocks, each made of 256 threads
   //1 thread por pixel
   int blockNum = ceil (w * h / 256);
+	cudaEventRecord(start);
+	// ----------------------------------------
+	// 
+	// THIS IS THE PARALLEL BLOCK 
+	// 
   GPU_HoughTran <<< blockNum, 256 >>> (d_in, w, h, d_hough, rMax, rScale, d_Cos, d_Sin);
-
+	// ----------------------------------------
   // get results from device
+	cudaEventRecord(stop);
   cudaMemcpy (h_hough, d_hough, sizeof (int) * degreeBins * rBins, cudaMemcpyDeviceToHost);
 
+	cudaEventSynchronize(stop);
+	float milliseconds = 0;
+	cudaEventElapsedTime(&milliseconds, start, stop);
   // compare CPU and GPU results
   for (i = 0; i < degreeBins * rBins; i++)
   {
     if (cpuht[i] != h_hough[i])
       printf ("Calculation mismatch at : %i %i %i\n", i, cpuht[i], h_hough[i]);
   }
+	printf("Total time elapsed: %f\n", milliseconds);
   printf("Done!\n");
 
   // TODO clean-up
+
+	// CUDA Clean-up
+	CUDA_CHECK_RETURN(cudaFree((void *) d_Cos));
+	CUDA_CHECK_RETURN(cudaFree((void *) d_Sin));
+	CUDA_CHECK_RETURN(cudaFree((void *) d_in));
+	CUDA_CHECK_RETURN(cudaFree((void *) d_hough));
+
+	// PC Clean-up
+	free(pcCos);
+	free(pcSin);
+	free(h_hough);
+
 
   return 0;
 }
