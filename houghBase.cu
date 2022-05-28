@@ -80,8 +80,7 @@ void CPU_HoughTran (unsigned char *pic, int w, int h, int **acc)
 // The accummulator memory needs to be allocated by the host in global memory
 __global__ void GPU_HoughTran (unsigned char *pic, int w, int h, int *acc, float rMax, float rScale, float *d_Cos, float *d_Sin)
 {
-  //TODO calcular: int gloID = ?
-  int gloID = w * h + 1; //TODO
+  int gloID = blockIdx.x * blockDim.x + threadIdx.x ;
   if (gloID > w * h) return;      // in case of extra threads in block
 
   int xCent = w / 2;
@@ -188,13 +187,11 @@ int main (int argc, char **argv)
   // compare CPU and GPU results
   for (i = 0; i < degreeBins * rBins; i++)
   {
-    if (cpuht[i] != h_hough[i])
-      printf ("Calculation mismatch at : %i %i %i\n", i, cpuht[i], h_hough[i]);
+    if (cpuht[i] != h_hough[i]) 
+       printf ("Calculation mismatch at : %i %i %i\n", i, cpuht[i], h_hough[i]);
   }
 	printf("Total time elapsed: %f\n", milliseconds);
   printf("Done!\n");
-
-  // TODO clean-up
 
 	// CUDA Clean-up
 	CUDA_CHECK_RETURN(cudaFree((void *) d_Cos));
