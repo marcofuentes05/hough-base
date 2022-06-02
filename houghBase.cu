@@ -61,8 +61,8 @@ void CPU_HoughTran (unsigned char *pic, int w, int h, int **acc)
 //*****************************************************************
 // TODO usar memoria constante para la tabla de senos y cosenos
 // inicializarlo en main y pasarlo al device
-//__constant__ float d_Cos[degreeBins];
-//__constant__ float d_Sin[degreeBins];
+__constant__ float d_Cos[degreeBins];
+__constant__ float d_Sin[degreeBins];
 
 //*****************************************************************
 //TODO Kernel memoria compartida
@@ -78,7 +78,8 @@ void CPU_HoughTran (unsigned char *pic, int w, int h, int **acc)
 
 // GPU kernel. One thread per image pixel is spawned.
 // The accummulator memory needs to be allocated by the host in global memory
-__global__ void GPU_HoughTran (unsigned char *pic, int w, int h, int *acc, float rMax, float rScale, float *d_Cos, float *d_Sin)
+//__global__ void GPU_HoughTran (unsigned char *pic, int w, int h, int *acc, float rMax, float rScale, float *d_Cos, float *d_Sin)
+__global__ void GPU_HoughTran (unsigned char *pic, int w, int h, int *acc, float rMax, float rScale)
 {
   int gloID = blockIdx.x * blockDim.x + threadIdx.x ;
   if (gloID > w * h) return;      // in case of extra threads in block
@@ -122,9 +123,6 @@ int main (int argc, char **argv)
   int w = inImg.x_dim;
   int h = inImg.y_dim;
 
-  float* d_Cos;
-  float* d_Sin;
-
   cudaMalloc ((void **) &d_Cos, sizeof (float) * degreeBins);
   cudaMalloc ((void **) &d_Sin, sizeof (float) * degreeBins);
 
@@ -146,8 +144,8 @@ int main (int argc, char **argv)
   float rScale = 2 * rMax / rBins;
 
   // TODO eventualmente volver memoria global
-  cudaMemcpy(d_Cos, pcCos, sizeof (float) * degreeBins, cudaMemcpyHostToDevice);
-  cudaMemcpy(d_Sin, pcSin, sizeof (float) * degreeBins, cudaMemcpyHostToDevice);
+  cudaMemcpyToSymbol(d_Cos, pcCos, sizeof (float) * degreeBins);
+  cudaMemcpyToSymbol(d_Sin, pcSin, sizeof (float) * degreeBins);
 
   // setup and copy data from host to device
   unsigned char *d_in, *h_in;
@@ -175,7 +173,7 @@ int main (int argc, char **argv)
 	// 
 	// THIS IS THE PARALLEL BLOCK 
 	// 
-  GPU_HoughTran <<< blockNum, 256 >>> (d_in, w, h, d_hough, rMax, rScale, d_Cos, d_Sin);
+  GPU_HoughTran <<< blockNum, 256 >>> (d_in, w, h, d_hough, rMax, rScale);
 	// ----------------------------------------
   // get results from device
 	cudaEventRecord(stop);
@@ -185,19 +183,22 @@ int main (int argc, char **argv)
 	float milliseconds = 0;
 	cudaEventElapsedTime(&milliseconds, start, stop);
   // compare CPU and GPU results
+	int counter = 0;
   for (i = 0; i < degreeBins * rBins; i++)
   {
     if (cpuht[i] != h_hough[i]) 
-       printf ("Calculation mismatch at : %i %i %i\n", i, cpuht[i], h_hough[i]);
+			counter++;
+//       printf ("Calculation mismatch at : %i %i %i\n", i, cpuht[i], h_hough[i]);
   }
+	printf("No. of errors: %d\n", counter);
 	printf("Total time elapsed: %f\n", milliseconds);
   printf("Done!\n");
 
 	// CUDA Clean-up
-	CUDA_CHECK_RETURN(cudaFree((void *) d_Cos));
-	CUDA_CHECK_RETURN(cudaFree((void *) d_Sin));
-	CUDA_CHECK_RETURN(cudaFree((void *) d_in));
-	CUDA_CHECK_RETURN(cudaFree((void *) d_hough));
+	cudaFree((void *) d_Cos);
+	cudaFree((void *) d_Sin);
+	cudaFree((void *) d_in);
+	cudaFree((void *) d_hough);
 
 	// PC Clean-up
 	free(pcCos);
